@@ -1,0 +1,302 @@
+* Chapter 1: Diving In
+Learn how to:
+- Install Salt
+- Configure the master and minion
+- Connect the minion to the master
+- Run our first remote execution commands
+
+We need to open ports 4505 and 4506 to accept incoming connections to the Salt Master.
+The Salt Minion finds the master at location `salt`, configurable in /etc/salt/minion.
+Ideally, we setup DNS to map Salt to the right IP Address.
+
+In /etc/salt/minion:
+- Change `#master: salt` to `master: localhost` or setup DNS
+- Change `#id: ` to `id: myminion` to get better debugging IDs instead of FQDN
+
+Then run:
+$ sudo systemctl restart salt-minion
+$ sudo systemctl restart salt-master
+$ sudo salt-key -a myminion  # to accept the minion key
+  
+Run the test.ping execution module on all Minions:
+$ sudo salt '*' test.ping
+
+Use the sys module for documentation and discovery
+$ sudo salt '*' sys.doc test
+$ sudo salt '*' sys.list_functions sys
+
+If we're on the minion and would like to send it a call locally without a Master,
+we do can so with salt-call
+$ sudo salt-call --local test.ping
+
+* Chapter 2: Controlling Your Minions with Remote Execution
+Covers:
+** How a remote execution command is structured
+Usage: salt [options] '<target>' <function> [arguments]
+
+*** Options
+Use `$ sudo salt --help` to see options.
+
+We can use --verbose and --out to control output formats, including
+outputting in json or yaml
+
+--timeout is also useful
+
+--async unblocks our cmdline and gives us a Job ID (jid) to lookup later what job did
+** How to target minions
+*** Globbing
+Minion specifications use globbing on Minion IDs, where '*' matches anything
+
+*** PCRE
+We can also use Python's re library with Perl-Compatible Regular Expressions, using the -E flag
+Note that this accepts partial matches:
+`$ sudo salt -E 'my' test.ping` matches "myminion"
+
+All regular expression syntax works here, so we can do:
+$ sudo salt -E '(my|your)minion' test.ping
+
+*** Lists
+We can use basic list matchers:
+$ sudo salt -L 'myminion,yourminion,theirminion' test.ping
+
+*** Grains and Pillars
+Grains represent static data describing a minion; e.g., `os_family`
+Lookup with:
+$ sudo salt '*' grains.item os_family
+
+Lookup all grains with:
+$ sudo salt '*' grains.items
+
+And then we can target with:
+$ sudo salt --grain 'os_family:Debian' test.ping
+
+We can set custom grains with:
+$ sudo salt '*' grains.setval foo bar
+$ sudo salt '*' grains.setval baz '["larry", "moe", "curly"]'
+
+These custom grains persist across both minion and master restarts, stored in
+/etc/salt/grains
+
+*** Compond Matching
+Allows us to specify compond targeting strings using a combination of the above methods.
+
+$ sudo salt -C '*minion and G@os:Ubuntu and not L@yourminion,theirminion' test.ping
+
+We have boolean operators [and,or,not] and match types corresponding to G, E, P, L, I, S, R
+** Remote execution modules and functions
+Complete documentation for default SaltStack modules is at:
+https://docs.saltstack.com/en/latest/salt-modindex.html
+** Practical remote execution examples
+*** Adding users
+$ sudo salt '*' sys.doc user.add
+$ sudo salt '*' user.add bhipple
+*** Installing packages
+$ sudo salt '*' sys.doc pkg.install
+$ sudo salt '*' pkg.install zsh
+*** Managing services
+$ sudo salt '*' sys.doc service
+$ sudo salt '*' service.status apache2
+
+We use the status, stop, and start commands
+*** Monitoring states
+$ sudo salt '*' sys.doc status
+
+Check various system metrics
+$ sudo salt '*' status.diskusage
+$ sudo salt '*' status.loadavg
+$ sudo salt '*' status.meminfo
+$ sudo salt '*' status.uptime
+*** Arbitrary commands
+$ sudo salt '*' sys.doc cmd
+
+$ sudo salt '*' cmd.run 'echo Hello!'
+
+To get all of pid, stdout, stderr, and return code:
+$ sudo salt '*' cmd.run_all 'echo Hello!'
+
+Note we can also pass languages to use, like Ruby or Python,
+to interpret the command.
+
+* Chapter 3: Execution Modules - Write Your Own Solution
+Chapter covers:
+- What an execution module is made up of
+- How to write our own execution module functions
+- The extra tools that are easily available to us in the context of execution modules
+- How to sync our execution modules to our minions
+
+A Salt execution module is just a simple Python function!
+
+** Cross-calling execution modules
+Salt creates a dictionary `__salt__` that contains references to all execution module functions.
+
+Here, we grab the "run_stdout" function from the cmd module for use in a program
+#+BEGIN_SRC python
+out = __salt__['cmd.run_stdout'](cmd, output_loglevel='trace')
+#+END_SRC
+
+** Grains and the __virtual__ function
+We can use the virtual function to provide back-end implementations based on grains
+
+If the virtual method returns false, Salt will not load any functions from this module.
+If we return True, the module gets named by the filename.
+If we return a string like 'pkg', this module will get renamed to 'pkg'.
+
+#+BEGIN_SRC python
+__virtualname__ = 'pkg'
+
+def __virtual__():
+    '''
+    Confirm this module is on a Debian based system
+    '''
+    if __grains__.get('os_family', False) != 'Debian':
+        return False
+    return __virtualname__
+#+END_SRC
+
+Double underscore functions to be aware of:
+- __salt__
+- __virtual__
+- __grains__
+- __opts__
+- __pillar__
+
+Opts lets us get minion configuration options, which can store arbitrary key-value pairs
+in addition to all the standard options.
+
+** Writing our own Module
+#+BEGIN_SRC shell
+sudo mkdir -p /srv/salt/_modules/
+
+# Write the module business logic
+sudo vim /src/salt/_modules/mymodule.py
+
+# Sync it to all the salt minions
+sudo salt '*' saltutil.sync_all
+
+# That's it! We can now call it
+sudo salt '*' mymodule.foo
+
+# and see it in the system list
+sudo salt '*' sys.list_functions mymodule
+
+# and see its documentation
+sudo salt '*' sys.doc mymodule
+
+# and see that it's a module among all the others
+sudo salt '*' sys.list_modules
+#+END_SRC
+* Chapter 4: Defining the State of Your Infrastructure
+Chapter covers:
+- How states are structured and how to write our first state
+- About the various pieces of the state declaration
+- How to expand our state declarations to encompass multiple pieces of a state
+- About ordering states with requisites
+
+  
+** Our first state
+States get saved as YAML files in `/srv/salt/*.sls`
+
+#+BEGIN_SRC sh
+# Apply foo.sls
+sudo salt '*' state.sls foo
+
+# Query for state functions
+sudo salt '*' sys.list_state_functions
+#+END_SRC
+
+While execution modules perform a task every time, state modules are idempotent.
+
+** The pieces of a state declaration
+Syntax is:
+
+<ID Declaration>:
+  <State Module>.function:
+    - name: <name>
+    - <Function Arg>
+    - <Function Arg>
+    - <Function Arg>
+    - <Requisite Declaration>:
+      - <Requisite Reference>
+
+The ID Declaration is any Python string, but it must be unique across all states.
+
+** Dependencies using Requisites
+By default, states converge in the order they're defined in the file
+Requisites allow us to establish specific dependency relationships.
+
+*** require
+Specifies that this state requires the other state to be run AND successful first
+*** watch
+If we're managing a file, we can watch it.  As before, files can be
+served out of `/srv/salt/`, but they can also be served out of S3,
+HTTPS, etc.
+
+We can trigger a state to be re-run when the file changes, such as reloading
+Nginx when its configuration file changes.
+*** Others: onfail, onchanges, prereq, use
+See http://docs.saltstack.com/en/latest/ref/states/requisites.html for more info.
+
+*** Injecting requisites
+A state can inject itself into other states, using the `_in` version
+In our Apache example, instead of saying apache depends on watching the file
+state, we could have made the file state tell apache to watch it by using
+`require_in` in the file state instead of `require` in the apache state.
+
+* Chapter 5: Expanding Our States with Jina2 and Pillar
+Chapter goals:
+- Learn the basics of the Jinja2 templating language
+- Use Jinja2 to make our states platform agnostic
+- Learn how to define minion-specific secure data in the pillar system
+- Use Jinja2 to use pillar data in our states
+
+** Jinja2
+Templating language for Python that we can use in State YAML definitions.
+
+Use {{ foo }} to execute foo and put its result in the blockchain
+
+Use this syntax for basic conditionals:
+  {% if foo == 'bar' %}
+  somestuff
+  {% elif foo == 'baz' %}
+  otherstuff
+  {% else %}
+  elsestuff
+  {% endif %}
+  
+And for loops:
+  {% for user in ['larry', 'moe', 'curly'] %}
+  Hello {{ user }}
+  {% endfor %}
+  
+And setting variables:
+  {% set myvar = 'foo' %}
+
+** Defining secure minion-specific data in pillar
+Pillars exist for minion-sensitive data, in /srv/pillar/
+
+We define our top level pillar in `top.sls`, which might have some contents like this:
+#+BEGIN_SRC yaml
+# Base will be our default environment
+base:
+  # Globbed on all minions, apply the core.sls pillar
+  '*':
+    - core
+  # On all minions with the debian os_family grain, apply the ssh_key.sls pillar
+  'os_family:debian':
+    - match: grain
+    - ssh_key
+#+END_SRC
+
+Whenever we run any state, pillar data is automatically refreshed.
+We can refresh it manually with 
+$ sudo salt '*' saltutil.refresh_pillar
+
+Pillar data can then be used in states.
+
+* Chapter 6: The Highstate and Environments
+Chapter goals:
+- How to use topfiles in the state system to target state files to different minions
+- How to use environments to further organize our state files
+- How to use GitFS to store our state files in version control
+  
+** The highstate
