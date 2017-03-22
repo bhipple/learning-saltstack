@@ -17,7 +17,7 @@ Then run:
 $ sudo systemctl restart salt-minion
 $ sudo systemctl restart salt-master
 $ sudo salt-key -a myminion  # to accept the minion key
-  
+
 Run the test.ping execution module on all Minions:
 $ sudo salt '*' test.ping
 
@@ -30,6 +30,7 @@ we do can so with salt-call
 $ sudo salt-call --local test.ping
 
 * Chapter 2: Controlling Your Minions with Remote Execution
+
 Covers:
 ** How a remote execution command is structured
 Usage: salt [options] '<target>' <function> [arguments]
@@ -192,7 +193,6 @@ Chapter covers:
 - How to expand our state declarations to encompass multiple pieces of a state
 - About ordering states with requisites
 
-  
 ** Our first state
 States get saved as YAML files in `/srv/salt/*.sls`
 
@@ -262,12 +262,12 @@ Use this syntax for basic conditionals:
   {% else %}
   elsestuff
   {% endif %}
-  
+
 And for loops:
   {% for user in ['larry', 'moe', 'curly'] %}
   Hello {{ user }}
   {% endfor %}
-  
+
 And setting variables:
   {% set myvar = 'foo' %}
 
@@ -288,7 +288,7 @@ base:
 #+END_SRC
 
 Whenever we run any state, pillar data is automatically refreshed.
-We can refresh it manually with 
+We can refresh it manually with
 $ sudo salt '*' saltutil.refresh_pillar
 
 Pillar data can then be used in states.
@@ -298,5 +298,51 @@ Chapter goals:
 - How to use topfiles in the state system to target state files to different minions
 - How to use environments to further organize our state files
 - How to use GitFS to store our state files in version control
-  
+
 ** The highstate
+We can use `/srv/salt/top.sls` to manage our state in much the same way we used
+`/srv/pillar/top.sls` to manage pillars.
+
+The complete set of state files included in the topfile is referred to as the
+highstate. We can apply it with: `sudo salt '*' state.highstate`
+
+** Environments with state
+`base` is the default environment, but we can configure as many as we need.
+
+By editing `/etc/salt/master` on the salt master node, we can create a webserver
+environment:
+#+BEGIN_SRC yaml
+file_roots:
+  base:
+    - /srv/salt
+  webserver:
+    - /srv/web
+#+END_SRC
+** Environments with pillar
+In `/etc/salt/master`, we setup:
+
+#+BEGIN_SRC yaml
+pillar_roots:
+  base:
+    - /srv/pillar
+  webserver:
+    - /srv/pillar-webserver
+#+END_SRC
+
+and change our topfile as such:
+
+#+BEGIN_SRC yaml
+base:
+  '*':
+    - core
+  'os_family:debian':
+    - match: grain
+    - ssh_key
+webserver:
+  '*minion':
+    - webserver_data
+#+END_SRC
+
+which will cause *minion to run `webserver_data.sls`.
+
+** Github
