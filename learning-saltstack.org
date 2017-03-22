@@ -345,4 +345,33 @@ webserver:
 
 which will cause *minion to run `webserver_data.sls`.
 
-** Github
+See `bhipple.sls` for an example on how to clone repos from github
+and run commands whenever they move.
+
+** GitFS
+The salt master has multiple backends for storing the files the master has,
+as alternatives to just putting them on the master node.
+
+See https://docs.saltstack.com/en/latest/topics/tutorials/gitfs.html
+for an in-depth tutorial on all of the SaltStack GitFS features.
+
+Configure the master `fileserver_backend` to ` - git` to use GitFS, optionally
+as a multiple backend.
+
+#+BEGIN_SRC yaml
+fileserver_backend:
+  - roots
+  - github
+
+gitfs_remotes:
+  - git://github.com/saltstack/salt-states.git
+  - file://var/git/saltmaster
+#+END_SRC
+
+*** Remote repository for salt files
+- master becomes the base environment
+- branch foo becomes the foo environment
+* Chapter 7: Using Salt Cloud to Manage Virtual Minions
+- How to configure Salt Cloud to talk to one or more cloud providers
+- How to use Salt Cloud to create and bootstrap new virtual machiens
+- How to manage fleets of virtual machines using map files
