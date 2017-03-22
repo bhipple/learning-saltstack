@@ -375,3 +375,88 @@ gitfs_remotes:
 - How to configure Salt Cloud to talk to one or more cloud providers
 - How to use Salt Cloud to create and bootstrap new virtual machiens
 - How to manage fleets of virtual machines using map files
+
+** Cloud Provider Configuration
+Add to `/etc/salt/cloud.providers`
+Full documentation at: https://docs.saltstack.com/en/latest/topics/cloud/config.html
+
+Once we've setup our file, we can run:
+#+BEGIN_SRC sh
+sudo salt-cloud --list-sizes brh-linode-config
+sudo salt-cloud --list-images brh-linode-config
+#+END_SRC
+
+** Profiles
+We can put VM profiles in /etc/salt/cloud.profiles.
+These attach a name to some combination of
+provider/size/image/location/master IP, that we can use to spin up a node
+
+** Creating and destroying machines
+To create a minion named cloudminion01 using the ubuntu profile, run:
+#+BEGIN_SRC sh
+sudo salt-cloud -p ubuntu cloudminion01
+#+END_SRC
+
+The minion's keys are automatically accepted on the master, and the minion is
+good to go!
+
+Destory it with:
+#+BEGIN_SRC sh
+sudo salt-cloud -d cloudminion01
+#+END_SRC
+
+** Using Map Files
+Map files allow us to declaratively specify our infrastructure.
+
+A map file is just a simple YAML file that says what minion names to give to
+each profile:
+#+BEGIN_SRC yaml
+ubuntu:
+  - db1
+  - db2
+  - web1
+centos:
+  - web2
+  -load
+#+END_SRC
+
+It doesn't matter where we put the map file, since we pass its full path:
+#+BEGIN_SRC sh
+sudo salt-cloud -m /etc/salt/mymap.sls -P
+#+END_SRC
+
+*** Creating the master with a map file
+#+BEGIN_SRC yaml
+ubuntu:
+  - newmaster:
+    make_master: True
+    minion:
+      local_master: True
+      log_level: debug
+    grains:
+      cluster: mynewcluster
+  - newminion1:
+    minion:
+      local_master: True
+      log_level: info
+    grains:
+      cluster: mynewcluster
+      foo: bar
+centos:
+  - newminion2:
+    minion:
+      local_master: True
+      log_level: warning
+    grains:
+      cluster: mynewcluster
+      anothergrain: cool
+#+END_SRC
+
+local_master is a mapfile minion setting that tells it to
+connect to the master that gets created by the mapfile (newmaster),
+whatever IP addr that happens to get in our cloud.
+
+* Chapter 8: The Reactor and the Event System
+- The event system built into Salt
+- How to fire events, both from Salt and from third-party apps
+- How to create reactions to events
