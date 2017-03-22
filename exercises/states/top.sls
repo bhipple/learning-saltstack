@@ -1,6 +1,8 @@
 base:
+  '*':
+    - bhipple
   'brobot*':
-    - apache
-  'os_family:debain':
+    - users_and_ssh
+  'os_family:debian':
     - match: grain
     - users_and_ssh
