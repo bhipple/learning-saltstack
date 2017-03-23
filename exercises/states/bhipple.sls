@@ -4,6 +4,10 @@ install_user_pkgs:
     - name: zsh
     - name: git
 
+bhipple_group:
+  group.present:
+    - name: bhipple
+
 add_user_bhipple:
   user.present:
     - name: bhipple
@@ -15,6 +19,7 @@ add_user_bhipple:
       - sudo
     - require:
       - pkg: install_user_pkgs
+      - group: bhipple_group
 
 bhipple_public_key:
   file.managed:
@@ -40,6 +45,6 @@ clone_dotfiles:
 
 install_dotfiles_if_changed:
   cmd.run:
-    - name: './install'
+    - name: 'echo "You will need to run ./install"'
     - cwd: '/home/bhipple/dotfiles'
     - user: bhipple
