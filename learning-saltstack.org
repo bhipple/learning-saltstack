@@ -460,3 +460,141 @@ whatever IP addr that happens to get in our cloud.
 - The event system built into Salt
 - How to fire events, both from Salt and from third-party apps
 - How to create reactions to events
+-
+** Monitoring events
+We can run this to start tailing event logs from the salt master:
+#+BEGIN_SRC sh
+sudo salt-run '*' state.event
+#+END_SRC
+
+** Firing events
+*** From the cmdline
+Look at documentation:
+#+BEGIN_SRC sh
+sudo salt '*' sys.doc event.send
+
+# Example event to send, with some custom tags
+sudo salt-call event.send 'salt/custom/mycoolapp/failure' '{"foo":"bar"}'
+#+END_SRC
+
+*** From custom code
+
+If running code on the master itself, we can do something like this:
+#+BEGIN_SRC python
+import salt.utils.event
+sock_dir = '/var/run/salt/master'
+payload = { 'sample-msg': 'this is a test',
+            'example': 'this is the same test'}
+event = salt.utils.event.SaltEvent('master', sock_dir)
+event.fire_event(payload, 'salt/mycustomtag')
+#+END_SRC
+
+When running on a minion, we can use the Salt Python API
+#+BEGIN_SRC python
+import salt.client
+caller = salt.client.Caller()
+caller.function('event.send',
+                'salt/mycustomtag',
+                {'foo': 'bar'})
+#+END_SRC
+
+** Reacting to events
+Reactors contain functions plus master configuration specifying when those
+functions should be fired.
+
+*** Reactor Trigger definition
+In `/etc/salt/master`, this specifies that reactor.sls should be executed
+whenever an event with tags matching 'salt/custom/*' is fired:
+#+BEGIN_SRC yaml
+reactor:
+  - 'salt/custom/*':
+    - salt://reactor.sls
+#+END_SRC
+
+*** Reactor action definition
+A simple reactor in `/srv/salt/reactor.sls`:
+
+#+BEGIN_SRC yaml
+# Remove the /tmp/marker dir
+remove_marker:
+  local.cmd.run:
+    - tgt: '*'
+    - arg:
+      - 'rm -rf /tmp/marker'
+
+append_tag:
+  local.cmd.run:
+    - tgt: '*'
+    - arg:
+      - 'rm -rf /tmp/marker'
+
+# Jinja2 has access to a data variable, which has the data from the event
+{% if data['tag'] == 'salt/custom/mycustomapp/failure' %}
+run_a_highstate:
+  local.state.highstate:
+    - tgt: '*'
+    - kwarg:
+      pillar:
+        trigger_event_tag: {{ data['tag'] }}
+{% endif %}
+#+END_SRC
+
+If we now trigger the event:
+#+BEGIN_SRC sh
+sudo salt-call event.send 'salt/custom/mycustomapp/failure' '{}'
+
+# We should see the highstate run in the job history
+sudo salt-run jobs.list_jobs
+#+END_SRC
+
+* Chapter 9: Security Best Practices in Salt
+- Security configuration options
+- Key management
+- Firewall and network configuration
+
+** Salt Configuration security
+The master has `open_mode` and `auto_accept` to turn off key validation
+with minions, which should only be used in very secure testing environments.
+
+`file_recv` allows minions to push files to the master. This lets you have
+minion to minion transfers with the master as an intermediary, but opens up
+attack vectors for a compromised minion to compromise the master.
+
+`peer` publishing settings allow some minions to send cmds to other minions.
+Very powerful and convenient, but opens up more vulnerability to 1 compromised
+minion compromising others minions.
+
+`master_finger` on the minion makes it harder to execute main-in-the-middle
+attacks on minions, with an attacker posing as the master.
+
+** Key management
+*** Verifying with pre-seeding
+By default, a new minion generates its key and contacts the master.
+We can use https://docs.saltstack.com/en/latest/topics/tutorials/preseed_key.html
+to preseed the key on the master and send it to the minion.
+
+#+BEGIN_SRC sh
+sudo salt-key --gen-keys=myminion
+sudo cp myminion.pub /etc/salt/pki/master/minions/
+
+# scp myminion.* to the minion machine, then on the minion:
+sudo cp myminion.pub /etc/salt/pki/minion/minion.pub
+sudo cp myminion.pem /etc/salt/pki/minion/minion.pem
+
+# We can also preseed the master public key
+sudo scp /etc/salt/pki/master/master.pub
+         root@myminion:/etc/salt/pki/minion/minion_master.pub
+#+END_SRC
+
+*** Verifying with fingerprints
+`sudo salt-key -F` shows us all key fingerprints, and we can put the master's
+into `master_finger` on the minion configuration to stop master MITM.
+
+** Firewall and network configuration
+If possible, *do not open the master to the public internet*.
+Minions will have to connect to the salt master's private network (VPN).
+If too inconvenient, setup firewall to only accept traffic from minion IPs and
+subnets.
+
+* Chapter 10: How Can I get Involved?
+Check out the Help Wanted label on their Github issues
